@@ -2,7 +2,6 @@ const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 const dotenv = require("dotenv");
-const fs = require("fs");
 const pdfParse = require("pdf-parse");
 const { GoogleGenAI } = require("@google/genai");
 
@@ -13,20 +12,25 @@ app.use(cors());
 app.use(express.json());
 
 const ai = new GoogleGenAI({}); // Automatically picks GEMINI_API_KEY from .env
-const upload = multer({ dest: "uploads/" });
+
+// ⚡ Bolt Optimization: Use memoryStorage instead of writing uploaded files to disk.
+// Using synchronous fs methods (fs.existsSync, fs.readFileSync, fs.unlinkSync) to process
+// uploaded files blocked the Node.js event loop. Keeping the buffer in memory improves
+// concurrent request throughput and eliminates unnecessary disk I/O bottlenecks.
+const upload = multer({ storage: multer.memoryStorage() });
 
 app.post("/api/analyze", upload.single("resume"), async (req, res) => {
   try {
     const { jobTitle, jobDesc } = req.body;
-    const filePath = req.file.path;
 
-    console.log("Uploaded resume:", filePath);
-    if (!fs.existsSync(filePath)) {
+    if (!req.file || !req.file.buffer) {
       return res.status(400).json({ error: "Resume file missing or not uploaded." });
     }
 
-    const resumeBuffer = fs.readFileSync(filePath);
-    const parsed = await pdfParse(resumeBuffer);
+    console.log("Uploaded resume processed in memory");
+
+    // Pass the buffer directly to pdf-parse
+    const parsed = await pdfParse(req.file.buffer);
     const resumeText = parsed.text;
 
     const prompt = `
@@ -56,7 +60,6 @@ Return results in Markdown format.
     });
 
     const feedback = response.text;
-    fs.unlinkSync(filePath); // Clean up uploaded file
 
     res.json({ feedback });
   } catch (error) {
