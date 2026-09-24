@@ -13,20 +13,20 @@ app.use(cors());
 app.use(express.json());
 
 const ai = new GoogleGenAI({}); // Automatically picks GEMINI_API_KEY from .env
-const upload = multer({ dest: "uploads/" });
+const upload = multer({ storage: multer.memoryStorage() });
 
 app.post("/api/analyze", upload.single("resume"), async (req, res) => {
   try {
     const { jobTitle, jobDesc } = req.body;
-    const filePath = req.file.path;
 
-    console.log("Uploaded resume:", filePath);
-    if (!fs.existsSync(filePath)) {
+    if (!req.file || !req.file.buffer) {
       return res.status(400).json({ error: "Resume file missing or not uploaded." });
     }
 
-    const resumeBuffer = fs.readFileSync(filePath);
-    const parsed = await pdfParse(resumeBuffer);
+    console.log("Uploaded resume:", req.file.originalname);
+
+    // ⚡ Bolt: Use memory buffer instead of disk I/O to avoid latency from writing/reading files
+    const parsed = await pdfParse(req.file.buffer);
     const resumeText = parsed.text;
 
     const prompt = `
@@ -56,7 +56,6 @@ Return results in Markdown format.
     });
 
     const feedback = response.text;
-    fs.unlinkSync(filePath); // Clean up uploaded file
 
     res.json({ feedback });
   } catch (error) {
