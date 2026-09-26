@@ -1,10 +1,12 @@
-import React, { useState } from "react";
-import ReactMarkdown from "react-markdown";
+import React, { useState, Suspense, lazy } from "react";
 import axios from "axios";
 
 import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap-icons/font/bootstrap-icons.css";
 import "./App.css";
+
+// ⚡ Bolt: Lazy load react-markdown to reduce initial bundle size since it's only needed after feedback is received
+const ReactMarkdown = lazy(() => import("react-markdown"));
 
 export default function App() {
   const [jobTitle, setJobTitle] = useState("");
@@ -30,7 +32,8 @@ export default function App() {
         formData
       );
       setFeedback(data.feedback);
-    } catch (err) {
+    } catch (error) {
+      console.error(error);
       alert("Something went wrong.");
     } finally {
       setLoading(false);
@@ -115,7 +118,9 @@ export default function App() {
             <h5 className="text-success fw-bold mb-3">
               💡 Smart Resume Feedback
             </h5>
-            <ReactMarkdown>{feedback}</ReactMarkdown>
+            <Suspense fallback={<div className="text-muted">Loading feedback renderer...</div>}>
+              <ReactMarkdown>{feedback}</ReactMarkdown>
+            </Suspense>
           </div>
         )}
       </form>
