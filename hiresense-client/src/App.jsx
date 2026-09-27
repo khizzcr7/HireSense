@@ -6,6 +6,20 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap-icons/font/bootstrap-icons.css";
 import "./App.css";
 
+// ⚡ Bolt: Memoize the feedback component to prevent expensive markdown parsing
+// and re-rendering on every keystroke in the job title/description inputs.
+const FeedbackResult = React.memo(({ feedback }) => {
+  if (!feedback) return null;
+  return (
+    <div className="mt-5 p-4 feedback-card react-markdown">
+      <h5 className="text-success fw-bold mb-3">
+        💡 Smart Resume Feedback
+      </h5>
+      <ReactMarkdown>{feedback}</ReactMarkdown>
+    </div>
+  );
+});
+
 export default function App() {
   const [jobTitle, setJobTitle] = useState("");
   const [jobDesc, setJobDesc] = useState("");
@@ -30,7 +44,7 @@ export default function App() {
         formData
       );
       setFeedback(data.feedback);
-    } catch (err) {
+    } catch {
       alert("Something went wrong.");
     } finally {
       setLoading(false);
@@ -110,14 +124,7 @@ export default function App() {
           )}
         </button>
 
-        {feedback && (
-          <div className="mt-5 p-4 feedback-card react-markdown">
-            <h5 className="text-success fw-bold mb-3">
-              💡 Smart Resume Feedback
-            </h5>
-            <ReactMarkdown>{feedback}</ReactMarkdown>
-          </div>
-        )}
+        <FeedbackResult feedback={feedback} />
       </form>
     </div>
   );
