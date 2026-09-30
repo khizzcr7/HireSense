@@ -1,6 +1,8 @@
-import React, { useState } from "react";
-import ReactMarkdown from "react-markdown";
+import React, { useState, Suspense, lazy } from "react";
 import axios from "axios";
+
+// ⚡ Bolt: Lazy load ReactMarkdown to reduce initial bundle size. It's only needed when feedback is displayed.
+const ReactMarkdown = lazy(() => import("react-markdown"));
 
 import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap-icons/font/bootstrap-icons.css";
@@ -31,6 +33,7 @@ export default function App() {
       );
       setFeedback(data.feedback);
     } catch (err) {
+      console.error(err);
       alert("Something went wrong.");
     } finally {
       setLoading(false);
@@ -115,7 +118,9 @@ export default function App() {
             <h5 className="text-success fw-bold mb-3">
               💡 Smart Resume Feedback
             </h5>
-            <ReactMarkdown>{feedback}</ReactMarkdown>
+            <Suspense fallback={<div className="spinner-border spinner-border-sm text-primary" role="status" />}>
+              <ReactMarkdown>{feedback}</ReactMarkdown>
+            </Suspense>
           </div>
         )}
       </form>
