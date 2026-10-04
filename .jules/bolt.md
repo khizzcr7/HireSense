@@ -1,3 +1,3 @@
-## 2023-10-27 - In-Memory File Uploads for Immediate Processing
-**Learning:** Writing files to disk during an API request solely to immediately read them back for processing and then delete them introduces unnecessary disk I/O latency and failure points.
-**Action:** Use `multer.memoryStorage()` for small, ephemeral file uploads (like resumes) to keep them in memory (`req.file.buffer`) for the lifecycle of the request, improving API response time and reducing disk operations.
+## 2026-10-04 - React Markdown Lazy Loading
+**Learning:** Large parsing libraries like `react-markdown` significantly increase the initial bundle size, even when only needed conditionally (e.g., after an API response).
+**Action:** Use `React.lazy` and `Suspense` to dynamically import heavy parsing libraries only when they are actually rendered, keeping the critical rendering path fast.
