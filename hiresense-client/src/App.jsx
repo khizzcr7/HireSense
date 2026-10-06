@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import axios from "axios";
 
@@ -30,12 +30,25 @@ export default function App() {
         formData
       );
       setFeedback(data.feedback);
-    } catch (err) {
+    } catch {
       alert("Something went wrong.");
     } finally {
       setLoading(false);
     }
   };
+
+  // ⚡ Bolt: Memoize the Markdown rendering to prevent expensive re-parsing on every keystroke in form inputs
+  const memoizedFeedback = useMemo(() => {
+    if (!feedback) return null;
+    return (
+      <div className="mt-5 p-4 feedback-card react-markdown">
+        <h5 className="text-success fw-bold mb-3">
+          💡 Smart Resume Feedback
+        </h5>
+        <ReactMarkdown>{feedback}</ReactMarkdown>
+      </div>
+    );
+  }, [feedback]);
 
   return (
 <div className=" main d-flex align-items-center justify-content-center gradient-bg px-3 py-5">
@@ -110,14 +123,7 @@ export default function App() {
           )}
         </button>
 
-        {feedback && (
-          <div className="mt-5 p-4 feedback-card react-markdown">
-            <h5 className="text-success fw-bold mb-3">
-              💡 Smart Resume Feedback
-            </h5>
-            <ReactMarkdown>{feedback}</ReactMarkdown>
-          </div>
-        )}
+        {memoizedFeedback}
       </form>
     </div>
   );
