@@ -1,3 +1,3 @@
-## 2023-10-27 - In-Memory File Uploads for Immediate Processing
-**Learning:** Writing files to disk during an API request solely to immediately read them back for processing and then delete them introduces unnecessary disk I/O latency and failure points.
-**Action:** Use `multer.memoryStorage()` for small, ephemeral file uploads (like resumes) to keep them in memory (`req.file.buffer`) for the lifecycle of the request, improving API response time and reducing disk operations.
+## 2025-02-28 - In-Memory Cache Optimization
+**Learning:** For expensive external AI calls, a simple Node native Map cache combined with crypto hashing is effective at drastically reducing response times for duplicate requests without external dependencies like Redis. Bounding cache size (e.g. 100 entries) prevents memory leaks.
+**Action:** Always implement a size-bounded, simple in-memory cache for API endpoints invoking expensive third-party network requests.
