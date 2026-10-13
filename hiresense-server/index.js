@@ -3,6 +3,7 @@ const cors = require("cors");
 const multer = require("multer");
 const dotenv = require("dotenv");
 const fs = require("fs");
+const crypto = require("crypto");
 const pdfParse = require("pdf-parse");
 const { GoogleGenAI } = require("@google/genai");
 
@@ -15,6 +16,10 @@ app.use(express.json());
 const ai = new GoogleGenAI({}); // Automatically picks GEMINI_API_KEY from .env
 const upload = multer({ storage: multer.memoryStorage() });
 
+// ⚡ Bolt: LRU Cache implementation
+const MAX_CACHE_SIZE = 100;
+const analysisCache = new Map();
+
 app.post("/api/analyze", upload.single("resume"), async (req, res) => {
   try {
     const { jobTitle, jobDesc } = req.body;
@@ -24,6 +29,22 @@ app.post("/api/analyze", upload.single("resume"), async (req, res) => {
     }
 
     console.log("Uploaded resume:", req.file.originalname);
+
+    // ⚡ Bolt: Hash payload to skip redundant external AI calls and parsing
+    const requestHash = crypto.createHash("sha256")
+      .update(req.file.buffer)
+      .update(jobTitle || "")
+      .update(jobDesc || "")
+      .digest("hex");
+
+    if (analysisCache.has(requestHash)) {
+      console.log("⚡ Bolt: Cache hit for analyze request");
+      // Re-insert to update the LRU status
+      const cachedFeedback = analysisCache.get(requestHash);
+      analysisCache.delete(requestHash);
+      analysisCache.set(requestHash, cachedFeedback);
+      return res.json({ feedback: cachedFeedback });
+    }
 
     // ⚡ Bolt: Use memory buffer instead of disk I/O to avoid latency from writing/reading files
     const parsed = await pdfParse(req.file.buffer);
@@ -56,6 +77,14 @@ Return results in Markdown format.
     });
 
     const feedback = response.text;
+
+    // ⚡ Bolt: Add to cache and manage size
+    if (analysisCache.size >= MAX_CACHE_SIZE) {
+      // Map preserves insertion order, so the first key is the oldest
+      const oldestKey = analysisCache.keys().next().value;
+      analysisCache.delete(oldestKey);
+    }
+    analysisCache.set(requestHash, feedback);
 
     res.json({ feedback });
   } catch (error) {
