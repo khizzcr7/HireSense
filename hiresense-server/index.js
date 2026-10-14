@@ -5,6 +5,7 @@ const dotenv = require("dotenv");
 const fs = require("fs");
 const pdfParse = require("pdf-parse");
 const { GoogleGenAI } = require("@google/genai");
+const crypto = require("crypto");
 
 dotenv.config();
 
@@ -15,6 +16,18 @@ app.use(express.json());
 const ai = new GoogleGenAI({}); // Automatically picks GEMINI_API_KEY from .env
 const upload = multer({ storage: multer.memoryStorage() });
 
+// ⚡ Bolt: Simple LRU Cache implementation using a Map to bounded size 100
+const MAX_CACHE_SIZE = 100;
+const analysisCache = new Map();
+
+function generateCacheKey(jobTitle, jobDesc, fileBuffer) {
+  const hash = crypto.createHash("sha256");
+  hash.update((jobTitle || "") + "|");
+  hash.update((jobDesc || "") + "|");
+  hash.update(fileBuffer);
+  return hash.digest("hex");
+}
+
 app.post("/api/analyze", upload.single("resume"), async (req, res) => {
   try {
     const { jobTitle, jobDesc } = req.body;
@@ -24,6 +37,21 @@ app.post("/api/analyze", upload.single("resume"), async (req, res) => {
     }
 
     console.log("Uploaded resume:", req.file.originalname);
+
+    // ⚡ Bolt: Generate a hash from the raw buffer and inputs to bypass AI processing completely for exact duplicates
+    const cacheKey = generateCacheKey(jobTitle, jobDesc, req.file.buffer);
+
+    // Check if we have a cached response
+    if (analysisCache.has(cacheKey)) {
+      console.log("⚡ Bolt: Cache hit! Skipping PDF parse and AI generation.");
+      const cachedFeedback = analysisCache.get(cacheKey);
+
+      // Re-insert to update LRU position
+      analysisCache.delete(cacheKey);
+      analysisCache.set(cacheKey, cachedFeedback);
+
+      return res.json({ feedback: cachedFeedback });
+    }
 
     // ⚡ Bolt: Use memory buffer instead of disk I/O to avoid latency from writing/reading files
     const parsed = await pdfParse(req.file.buffer);
@@ -56,6 +84,14 @@ Return results in Markdown format.
     });
 
     const feedback = response.text;
+
+    // ⚡ Bolt: Save to cache, enforcing LRU bounds
+    analysisCache.set(cacheKey, feedback);
+    if (analysisCache.size > MAX_CACHE_SIZE) {
+      // The first item in a Map iterator is the oldest inserted
+      const oldestKey = analysisCache.keys().next().value;
+      analysisCache.delete(oldestKey);
+    }
 
     res.json({ feedback });
   } catch (error) {
