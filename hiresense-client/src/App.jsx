@@ -30,7 +30,7 @@ export default function App() {
         formData
       );
       setFeedback(data.feedback);
-    } catch (err) {
+    } catch (_err) {
       alert("Something went wrong.");
     } finally {
       setLoading(false);
