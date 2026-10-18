@@ -3,10 +3,17 @@ const cors = require("cors");
 const multer = require("multer");
 const dotenv = require("dotenv");
 const fs = require("fs");
+const crypto = require("crypto");
 const pdfParse = require("pdf-parse");
 const { GoogleGenAI } = require("@google/genai");
 
 dotenv.config();
+
+// ⚡ Bolt: Implemented an in-memory LRU cache to avoid redundant AI processing for identical requests.
+// 🎯 Why: AI calls and PDF parsing are expensive operations. Users often re-submit the same resume and job title.
+// 📊 Impact: Bypasses network latency and processing time entirely on cache hit (~3-5s savings).
+const analysisCache = new Map();
+const MAX_CACHE_SIZE = 100;
 
 const app = express();
 app.use(cors());
@@ -21,6 +28,23 @@ app.post("/api/analyze", upload.single("resume"), async (req, res) => {
 
     if (!req.file || !req.file.buffer) {
       return res.status(400).json({ error: "Resume file missing or not uploaded." });
+    }
+
+    // Generate a unique hash for the request payload
+    const cacheKey = crypto.createHash("sha256")
+      .update(req.file.buffer)
+      .update("|" + (jobTitle || "") + "|" + (jobDesc || ""))
+      .digest("hex");
+
+    if (analysisCache.has(cacheKey)) {
+      console.log("⚡ Cache hit for resume:", req.file.originalname);
+      const cachedFeedback = analysisCache.get(cacheKey);
+
+      // Delete and re-insert to maintain LRU order (most recently used at the end)
+      analysisCache.delete(cacheKey);
+      analysisCache.set(cacheKey, cachedFeedback);
+
+      return res.json({ feedback: cachedFeedback });
     }
 
     console.log("Uploaded resume:", req.file.originalname);
@@ -56,6 +80,15 @@ Return results in Markdown format.
     });
 
     const feedback = response.text;
+
+    // Add to cache
+    analysisCache.set(cacheKey, feedback);
+
+    // Evict oldest if cache exceeds max size (first item in Map is the oldest inserted)
+    if (analysisCache.size > MAX_CACHE_SIZE) {
+      const oldestKey = analysisCache.keys().next().value;
+      analysisCache.delete(oldestKey);
+    }
 
     res.json({ feedback });
   } catch (error) {
