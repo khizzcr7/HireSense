@@ -5,8 +5,14 @@ const dotenv = require("dotenv");
 const fs = require("fs");
 const pdfParse = require("pdf-parse");
 const { GoogleGenAI } = require("@google/genai");
+const crypto = require("crypto");
 
 dotenv.config();
+
+// ⚡ Bolt: Use a Map as an LRU cache (bounded to 100 entries) to bypass redundant AI calls.
+// The hash key is created from the resume buffer, job title, and description.
+const analyzeCache = new Map();
+const CACHE_LIMIT = 100;
 
 const app = express();
 app.use(cors());
@@ -25,7 +31,21 @@ app.post("/api/analyze", upload.single("resume"), async (req, res) => {
 
     console.log("Uploaded resume:", req.file.originalname);
 
-    // ⚡ Bolt: Use memory buffer instead of disk I/O to avoid latency from writing/reading files
+    // ⚡ Bolt: Cache key generation using crypto to hash inputs
+    const hash = crypto.createHash("sha256");
+    hash.update(req.file.buffer);
+    hash.update(`|${jobTitle}|${jobDesc || ""}`);
+    const cacheKey = hash.digest("hex");
+
+    // ⚡ Bolt: LRU Cache hit logic
+    if (analyzeCache.has(cacheKey)) {
+      console.log("⚡ Bolt: Cache hit for", cacheKey);
+      const cachedResult = analyzeCache.get(cacheKey);
+      analyzeCache.delete(cacheKey);
+      analyzeCache.set(cacheKey, cachedResult);
+      return res.json({ feedback: cachedResult });
+    }
+
     const parsed = await pdfParse(req.file.buffer);
     const resumeText = parsed.text;
 
@@ -56,6 +76,13 @@ Return results in Markdown format.
     });
 
     const feedback = response.text;
+
+    // ⚡ Bolt: LRU Cache eviction logic
+    analyzeCache.set(cacheKey, feedback);
+    if (analyzeCache.size > CACHE_LIMIT) {
+      const oldestKey = analyzeCache.keys().next().value;
+      analyzeCache.delete(oldestKey);
+    }
 
     res.json({ feedback });
   } catch (error) {
