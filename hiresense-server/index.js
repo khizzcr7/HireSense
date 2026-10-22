@@ -5,6 +5,7 @@ const dotenv = require("dotenv");
 const fs = require("fs");
 const pdfParse = require("pdf-parse");
 const { GoogleGenAI } = require("@google/genai");
+const crypto = require("crypto");
 
 dotenv.config();
 
@@ -15,6 +16,10 @@ app.use(express.json());
 const ai = new GoogleGenAI({}); // Automatically picks GEMINI_API_KEY from .env
 const upload = multer({ storage: multer.memoryStorage() });
 
+// ⚡ Bolt: LRU Cache for expensive AI generation calls
+const analyzeCache = new Map();
+const MAX_CACHE_SIZE = 100;
+
 app.post("/api/analyze", upload.single("resume"), async (req, res) => {
   try {
     const { jobTitle, jobDesc } = req.body;
@@ -24,6 +29,20 @@ app.post("/api/analyze", upload.single("resume"), async (req, res) => {
     }
 
     console.log("Uploaded resume:", req.file.originalname);
+
+    // ⚡ Bolt: Cache expensive API call results to bypass redundant external AI calls
+    const hash = crypto.createHash("sha256");
+    hash.update(req.file.buffer);
+    hash.update(`|${jobTitle}|${jobDesc || ""}`);
+    const cacheKey = hash.digest("hex");
+
+    if (analyzeCache.has(cacheKey)) {
+      console.log("⚡ Bolt: Serving from cache");
+      const cachedResult = analyzeCache.get(cacheKey);
+      analyzeCache.delete(cacheKey);
+      analyzeCache.set(cacheKey, cachedResult);
+      return res.json({ feedback: cachedResult });
+    }
 
     // ⚡ Bolt: Use memory buffer instead of disk I/O to avoid latency from writing/reading files
     const parsed = await pdfParse(req.file.buffer);
@@ -56,6 +75,12 @@ Return results in Markdown format.
     });
 
     const feedback = response.text;
+
+    if (analyzeCache.size >= MAX_CACHE_SIZE) {
+      const firstKey = analyzeCache.keys().next().value;
+      analyzeCache.delete(firstKey);
+    }
+    analyzeCache.set(cacheKey, feedback);
 
     res.json({ feedback });
   } catch (error) {
