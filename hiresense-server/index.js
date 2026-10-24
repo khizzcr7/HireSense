@@ -5,6 +5,7 @@ const dotenv = require("dotenv");
 const fs = require("fs");
 const pdfParse = require("pdf-parse");
 const { GoogleGenAI } = require("@google/genai");
+const crypto = require("crypto");
 
 dotenv.config();
 
@@ -15,12 +16,32 @@ app.use(express.json());
 const ai = new GoogleGenAI({}); // Automatically picks GEMINI_API_KEY from .env
 const upload = multer({ storage: multer.memoryStorage() });
 
+// ⚡ Bolt: Simple LRU Cache
+const MAX_CACHE_SIZE = 100;
+const analysisCache = new Map();
+
 app.post("/api/analyze", upload.single("resume"), async (req, res) => {
   try {
     const { jobTitle, jobDesc } = req.body;
 
     if (!req.file || !req.file.buffer) {
       return res.status(400).json({ error: "Resume file missing or not uploaded." });
+    }
+
+    // ⚡ Bolt: Check Cache first to avoid redundant AI API calls
+    // Passing the buffer directly avoids allocating a large string in memory
+    const cacheKey = crypto.createHash("sha256")
+      .update(req.file.buffer)
+      .update(`|${jobTitle}|${jobDesc || ''}`)
+      .digest("hex");
+
+    if (analysisCache.has(cacheKey)) {
+      console.log("⚡ Bolt: Cache hit for resume analysis");
+      // Update LRU by removing and re-inserting
+      const cachedFeedback = analysisCache.get(cacheKey);
+      analysisCache.delete(cacheKey);
+      analysisCache.set(cacheKey, cachedFeedback);
+      return res.json({ feedback: cachedFeedback });
     }
 
     console.log("Uploaded resume:", req.file.originalname);
@@ -56,6 +77,13 @@ Return results in Markdown format.
     });
 
     const feedback = response.text;
+
+    // ⚡ Bolt: Cache the result
+    if (analysisCache.size >= MAX_CACHE_SIZE) {
+      const oldestKey = analysisCache.keys().next().value;
+      analysisCache.delete(oldestKey);
+    }
+    analysisCache.set(cacheKey, feedback);
 
     res.json({ feedback });
   } catch (error) {

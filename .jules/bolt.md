@@ -1,3 +1,3 @@
-## 2023-10-27 - In-Memory File Uploads for Immediate Processing
-**Learning:** Writing files to disk during an API request solely to immediately read them back for processing and then delete them introduces unnecessary disk I/O latency and failure points.
-**Action:** Use `multer.memoryStorage()` for small, ephemeral file uploads (like resumes) to keep them in memory (`req.file.buffer`) for the lifecycle of the request, improving API response time and reducing disk operations.
+## 2023-10-24 - Efficient Buffer Hashing in Node
+**Learning:** When hashing large file buffers (like PDFs in memory via multer) using Node's crypto module, converting the buffer to a base64 string (`req.file.buffer.toString('base64')`) before hashing allocates unnecessary memory and hurts performance. The crypto `update()` function can take buffers directly.
+**Action:** Always pass `Buffer` objects directly to `crypto.createHash().update(buffer)` instead of converting them to strings first to minimize memory allocation and maximize performance.
