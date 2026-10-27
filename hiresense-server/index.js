@@ -3,6 +3,7 @@ const cors = require("cors");
 const multer = require("multer");
 const dotenv = require("dotenv");
 const fs = require("fs");
+const crypto = require("crypto");
 const pdfParse = require("pdf-parse");
 const { GoogleGenAI } = require("@google/genai");
 
@@ -15,6 +16,10 @@ app.use(express.json());
 const ai = new GoogleGenAI({}); // Automatically picks GEMINI_API_KEY from .env
 const upload = multer({ storage: multer.memoryStorage() });
 
+// ⚡ Bolt: LRU Cache to avoid redundant external AI calls
+const cache = new Map();
+const CACHE_MAX_SIZE = 100;
+
 app.post("/api/analyze", upload.single("resume"), async (req, res) => {
   try {
     const { jobTitle, jobDesc } = req.body;
@@ -24,6 +29,24 @@ app.post("/api/analyze", upload.single("resume"), async (req, res) => {
     }
 
     console.log("Uploaded resume:", req.file.originalname);
+
+    // ⚡ Bolt: Compute cache key
+    const hash = crypto.createHash("sha256");
+    hash.update(req.file.buffer);
+    hash.update("|");
+    hash.update(jobTitle || "");
+    hash.update("|");
+    hash.update(jobDesc || "");
+    const cacheKey = hash.digest("hex");
+
+    if (cache.has(cacheKey)) {
+      console.log("⚡ Bolt: Cache hit for analyze request");
+      const cachedFeedback = cache.get(cacheKey);
+      // Maintain LRU order by deleting and re-inserting
+      cache.delete(cacheKey);
+      cache.set(cacheKey, cachedFeedback);
+      return res.json({ feedback: cachedFeedback });
+    }
 
     // ⚡ Bolt: Use memory buffer instead of disk I/O to avoid latency from writing/reading files
     const parsed = await pdfParse(req.file.buffer);
@@ -56,6 +79,14 @@ Return results in Markdown format.
     });
 
     const feedback = response.text;
+
+    // ⚡ Bolt: Store in LRU cache
+    if (cache.size >= CACHE_MAX_SIZE) {
+      // The Map iterator returns elements in insertion order, so the first is the oldest
+      const oldestKey = cache.keys().next().value;
+      cache.delete(oldestKey);
+    }
+    cache.set(cacheKey, feedback);
 
     res.json({ feedback });
   } catch (error) {
