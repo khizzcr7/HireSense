@@ -3,10 +3,25 @@ const cors = require("cors");
 const multer = require("multer");
 const dotenv = require("dotenv");
 const fs = require("fs");
+const crypto = require("crypto");
 const pdfParse = require("pdf-parse");
 const { GoogleGenAI } = require("@google/genai");
 
 dotenv.config();
+
+// ⚡ Bolt: Implemented an in-memory LRU cache to avoid redundant external AI calls for the same payload
+const MAX_CACHE_SIZE = 100;
+const lruCache = new Map();
+
+function generateCacheKey(buffer, jobTitle, jobDesc) {
+  const hash = crypto.createHash('sha256');
+  hash.update(buffer);
+  hash.update('|');
+  hash.update(jobTitle || '');
+  hash.update('|');
+  hash.update(jobDesc || '');
+  return hash.digest('hex');
+}
 
 const app = express();
 app.use(cors());
@@ -24,6 +39,17 @@ app.post("/api/analyze", upload.single("resume"), async (req, res) => {
     }
 
     console.log("Uploaded resume:", req.file.originalname);
+
+    const cacheKey = generateCacheKey(req.file.buffer, jobTitle, jobDesc);
+
+    if (lruCache.has(cacheKey)) {
+      console.log("⚡ Bolt: Cache hit, bypassing AI model for:", req.file.originalname);
+      const cachedFeedback = lruCache.get(cacheKey);
+      // Maintain LRU order by deleting and re-inserting
+      lruCache.delete(cacheKey);
+      lruCache.set(cacheKey, cachedFeedback);
+      return res.json({ feedback: cachedFeedback });
+    }
 
     // ⚡ Bolt: Use memory buffer instead of disk I/O to avoid latency from writing/reading files
     const parsed = await pdfParse(req.file.buffer);
@@ -56,6 +82,13 @@ Return results in Markdown format.
     });
 
     const feedback = response.text;
+
+    // Add to LRU cache, evicting the oldest if at capacity
+    if (lruCache.size >= MAX_CACHE_SIZE) {
+      const oldestKey = lruCache.keys().next().value;
+      lruCache.delete(oldestKey);
+    }
+    lruCache.set(cacheKey, feedback);
 
     res.json({ feedback });
   } catch (error) {
