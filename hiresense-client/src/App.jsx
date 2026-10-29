@@ -30,7 +30,8 @@ export default function App() {
         formData
       );
       setFeedback(data.feedback);
-    } catch (err) {
+    } catch (error) {
+      console.error(error);
       alert("Something went wrong.");
     } finally {
       setLoading(false);
