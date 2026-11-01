@@ -5,6 +5,7 @@ const dotenv = require("dotenv");
 const fs = require("fs");
 const pdfParse = require("pdf-parse");
 const { GoogleGenAI } = require("@google/genai");
+const crypto = require("crypto");
 
 dotenv.config();
 
@@ -15,6 +16,10 @@ app.use(express.json());
 const ai = new GoogleGenAI({}); // Automatically picks GEMINI_API_KEY from .env
 const upload = multer({ storage: multer.memoryStorage() });
 
+// LRU Cache for AI responses to avoid redundant calls
+const aiCache = new Map();
+const MAX_CACHE_SIZE = 100;
+
 app.post("/api/analyze", upload.single("resume"), async (req, res) => {
   try {
     const { jobTitle, jobDesc } = req.body;
@@ -24,6 +29,21 @@ app.post("/api/analyze", upload.single("resume"), async (req, res) => {
     }
 
     console.log("Uploaded resume:", req.file.originalname);
+
+    // ⚡ Bolt: Cache AI responses using a hash of the input to bypass redundant API calls
+    const hash = crypto.createHash("sha256");
+    hash.update(req.file.buffer);
+    hash.update(`|${jobTitle || ""}|${jobDesc || ""}`);
+    const cacheKey = hash.digest("hex");
+
+    if (aiCache.has(cacheKey)) {
+      console.log("⚡ Bolt: Cache hit! Returning cached feedback.");
+      const cachedFeedback = aiCache.get(cacheKey);
+      // Delete and re-insert to maintain LRU order (most recently used at the end)
+      aiCache.delete(cacheKey);
+      aiCache.set(cacheKey, cachedFeedback);
+      return res.json({ feedback: cachedFeedback });
+    }
 
     // ⚡ Bolt: Use memory buffer instead of disk I/O to avoid latency from writing/reading files
     const parsed = await pdfParse(req.file.buffer);
@@ -56,6 +76,14 @@ Return results in Markdown format.
     });
 
     const feedback = response.text;
+
+    // Store in cache
+    aiCache.set(cacheKey, feedback);
+    if (aiCache.size > MAX_CACHE_SIZE) {
+      // The first key in a Map is the oldest one inserted
+      const oldestKey = aiCache.keys().next().value;
+      aiCache.delete(oldestKey);
+    }
 
     res.json({ feedback });
   } catch (error) {
