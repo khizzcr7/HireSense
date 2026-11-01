@@ -31,6 +31,7 @@ export default function App() {
       );
       setFeedback(data.feedback);
     } catch (err) {
+      console.error(err);
       alert("Something went wrong.");
     } finally {
       setLoading(false);
