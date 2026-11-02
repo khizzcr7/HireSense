@@ -1,3 +1,3 @@
-## 2023-10-27 - In-Memory File Uploads for Immediate Processing
-**Learning:** Writing files to disk during an API request solely to immediately read them back for processing and then delete them introduces unnecessary disk I/O latency and failure points.
-**Action:** Use `multer.memoryStorage()` for small, ephemeral file uploads (like resumes) to keep them in memory (`req.file.buffer`) for the lifecycle of the request, improving API response time and reducing disk operations.
+## 2024-05-18 - Avoid Root node_modules Pollution
+**Learning:** Running `npm install` and arbitrary scripts in the root directory can unintentionally modify many global state files and pollute `node_modules`.
+**Action:** Always install and run test code locally in their respective service directory (e.g. `cd hiresense-server`) to keep changes properly scoped and prevent massive git diff warnings.

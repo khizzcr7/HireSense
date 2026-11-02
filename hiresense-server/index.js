@@ -3,6 +3,7 @@ const cors = require("cors");
 const multer = require("multer");
 const dotenv = require("dotenv");
 const fs = require("fs");
+const crypto = require("crypto");
 const pdfParse = require("pdf-parse");
 const { GoogleGenAI } = require("@google/genai");
 
@@ -15,6 +16,10 @@ app.use(express.json());
 const ai = new GoogleGenAI({}); // Automatically picks GEMINI_API_KEY from .env
 const upload = multer({ storage: multer.memoryStorage() });
 
+// ⚡ Bolt: In-memory LRU cache to avoid redundant AI calls and pdf parsing
+const cache = new Map();
+const MAX_CACHE_SIZE = 100;
+
 app.post("/api/analyze", upload.single("resume"), async (req, res) => {
   try {
     const { jobTitle, jobDesc } = req.body;
@@ -24,6 +29,22 @@ app.post("/api/analyze", upload.single("resume"), async (req, res) => {
     }
 
     console.log("Uploaded resume:", req.file.originalname);
+
+    // ⚡ Bolt: Generate cache key based on file content and job inputs
+    const hash = crypto.createHash("sha256");
+    hash.update(req.file.buffer);
+    hash.update(`|${jobTitle}|${jobDesc || ""}`);
+    const cacheKey = hash.digest("hex");
+
+    // ⚡ Bolt: Check LRU cache
+    if (cache.has(cacheKey)) {
+      console.log("Cache hit for:", req.file.originalname);
+      const cachedResult = cache.get(cacheKey);
+      // Delete and re-insert to maintain LRU order (most recently used at the end)
+      cache.delete(cacheKey);
+      cache.set(cacheKey, cachedResult);
+      return res.json({ feedback: cachedResult });
+    }
 
     // ⚡ Bolt: Use memory buffer instead of disk I/O to avoid latency from writing/reading files
     const parsed = await pdfParse(req.file.buffer);
@@ -56,6 +77,13 @@ Return results in Markdown format.
     });
 
     const feedback = response.text;
+
+    // ⚡ Bolt: Store result in cache and evict oldest if necessary
+    cache.set(cacheKey, feedback);
+    if (cache.size > MAX_CACHE_SIZE) {
+      const oldestKey = cache.keys().next().value;
+      cache.delete(oldestKey);
+    }
 
     res.json({ feedback });
   } catch (error) {
