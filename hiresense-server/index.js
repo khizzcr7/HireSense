@@ -5,6 +5,7 @@ const dotenv = require("dotenv");
 const fs = require("fs");
 const pdfParse = require("pdf-parse");
 const { GoogleGenAI } = require("@google/genai");
+const crypto = require("crypto");
 
 dotenv.config();
 
@@ -15,6 +16,10 @@ app.use(express.json());
 const ai = new GoogleGenAI({}); // Automatically picks GEMINI_API_KEY from .env
 const upload = multer({ storage: multer.memoryStorage() });
 
+// ⚡ Bolt: LRU Cache to avoid redundant AI processing for same inputs
+const analysisCache = new Map();
+const CACHE_LIMIT = 100;
+
 app.post("/api/analyze", upload.single("resume"), async (req, res) => {
   try {
     const { jobTitle, jobDesc } = req.body;
@@ -24,6 +29,22 @@ app.post("/api/analyze", upload.single("resume"), async (req, res) => {
     }
 
     console.log("Uploaded resume:", req.file.originalname);
+
+    // Generate cache key using hash of input (buffer + job title + job desc)
+    const hash = crypto.createHash("sha256");
+    hash.update(req.file.buffer);
+    hash.update(`|${jobTitle || ""}|${jobDesc || ""}`);
+    const cacheKey = hash.digest("hex");
+
+    // Check cache
+    if (analysisCache.has(cacheKey)) {
+      console.log("⚡ Bolt: Cache hit! Skipping AI processing.");
+      const cachedFeedback = analysisCache.get(cacheKey);
+      // Update LRU position
+      analysisCache.delete(cacheKey);
+      analysisCache.set(cacheKey, cachedFeedback);
+      return res.json({ feedback: cachedFeedback });
+    }
 
     // ⚡ Bolt: Use memory buffer instead of disk I/O to avoid latency from writing/reading files
     const parsed = await pdfParse(req.file.buffer);
@@ -56,6 +77,14 @@ Return results in Markdown format.
     });
 
     const feedback = response.text;
+
+    // Store in cache
+    analysisCache.set(cacheKey, feedback);
+    if (analysisCache.size > CACHE_LIMIT) {
+      // Evict oldest entry (Map iterates in insertion order)
+      const oldestKey = analysisCache.keys().next().value;
+      analysisCache.delete(oldestKey);
+    }
 
     res.json({ feedback });
   } catch (error) {
