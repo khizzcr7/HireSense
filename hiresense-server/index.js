@@ -3,6 +3,7 @@ const cors = require("cors");
 const multer = require("multer");
 const dotenv = require("dotenv");
 const fs = require("fs");
+const crypto = require("crypto");
 const pdfParse = require("pdf-parse");
 const { GoogleGenAI } = require("@google/genai");
 
@@ -15,6 +16,10 @@ app.use(express.json());
 const ai = new GoogleGenAI({}); // Automatically picks GEMINI_API_KEY from .env
 const upload = multer({ storage: multer.memoryStorage() });
 
+// LRU Cache using Map
+const analyzeCache = new Map();
+const CACHE_LIMIT = 100;
+
 app.post("/api/analyze", upload.single("resume"), async (req, res) => {
   try {
     const { jobTitle, jobDesc } = req.body;
@@ -24,6 +29,22 @@ app.post("/api/analyze", upload.single("resume"), async (req, res) => {
     }
 
     console.log("Uploaded resume:", req.file.originalname);
+
+    // Hash request payload for caching (optimize by hashing buffer directly)
+    const cacheKey = crypto.createHash('sha256')
+                           .update(req.file.buffer)
+                           .update(`|${jobTitle || ''}|${jobDesc || ''}`)
+                           .digest('hex');
+
+    // ⚡ Bolt: Implement in-memory LRU cache to bypass redundant AI calls
+    if (analyzeCache.has(cacheKey)) {
+      console.log("Cache hit for analyze request.");
+      const cachedFeedback = analyzeCache.get(cacheKey);
+      // Maintain LRU order by deleting and re-inserting
+      analyzeCache.delete(cacheKey);
+      analyzeCache.set(cacheKey, cachedFeedback);
+      return res.json({ feedback: cachedFeedback });
+    }
 
     // ⚡ Bolt: Use memory buffer instead of disk I/O to avoid latency from writing/reading files
     const parsed = await pdfParse(req.file.buffer);
@@ -56,6 +77,14 @@ Return results in Markdown format.
     });
 
     const feedback = response.text;
+
+    // Store in cache
+    analyzeCache.set(cacheKey, feedback);
+    if (analyzeCache.size > CACHE_LIMIT) {
+      // Remove oldest entry (first item in Map)
+      const oldestKey = analyzeCache.keys().next().value;
+      analyzeCache.delete(oldestKey);
+    }
 
     res.json({ feedback });
   } catch (error) {
