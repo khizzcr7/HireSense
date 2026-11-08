@@ -1,3 +1,4 @@
-## 2023-10-27 - In-Memory File Uploads for Immediate Processing
-**Learning:** Writing files to disk during an API request solely to immediately read them back for processing and then delete them introduces unnecessary disk I/O latency and failure points.
-**Action:** Use `multer.memoryStorage()` for small, ephemeral file uploads (like resumes) to keep them in memory (`req.file.buffer`) for the lifecycle of the request, improving API response time and reducing disk operations.
+## 2026-11-07 - In-Memory LRU Cache for AI Analysis
+
+**Learning:** Re-analyzing identical resumes with the same job descriptions via the Gemini API generates significant latency and API costs.
+**Action:** Implement an in-memory LRU cache using a native JavaScript \`Map\` to cache API responses keyed by a SHA-256 hash of the resume buffer, job title, and job description to prevent redundant external calls and speed up response times.

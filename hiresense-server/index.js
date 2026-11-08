@@ -5,10 +5,25 @@ const dotenv = require("dotenv");
 const fs = require("fs");
 const pdfParse = require("pdf-parse");
 const { GoogleGenAI } = require("@google/genai");
+const crypto = require("crypto");
 
 dotenv.config();
 
 const app = express();
+
+// ⚡ Bolt: In-memory LRU cache to avoid redundant AI API calls
+const MAX_CACHE_SIZE = 100;
+const analysisCache = new Map();
+
+function generateCacheKey(buffer, jobTitle, jobDesc) {
+  const hash = crypto.createHash("sha256");
+  hash.update(buffer);
+  hash.update("|");
+  hash.update(jobTitle || "");
+  hash.update("|");
+  hash.update(jobDesc || "");
+  return hash.digest("hex");
+}
 app.use(cors());
 app.use(express.json());
 
@@ -24,6 +39,17 @@ app.post("/api/analyze", upload.single("resume"), async (req, res) => {
     }
 
     console.log("Uploaded resume:", req.file.originalname);
+
+    const cacheKey = generateCacheKey(req.file.buffer, jobTitle, jobDesc);
+
+    if (analysisCache.has(cacheKey)) {
+      console.log("⚡ Bolt: Cache hit! Returning cached feedback.");
+      const cachedFeedback = analysisCache.get(cacheKey);
+      // Delete and re-insert to maintain LRU order (most recently used at the end)
+      analysisCache.delete(cacheKey);
+      analysisCache.set(cacheKey, cachedFeedback);
+      return res.json({ feedback: cachedFeedback });
+    }
 
     // ⚡ Bolt: Use memory buffer instead of disk I/O to avoid latency from writing/reading files
     const parsed = await pdfParse(req.file.buffer);
@@ -56,6 +82,15 @@ Return results in Markdown format.
     });
 
     const feedback = response.text;
+
+    // Add to cache
+    analysisCache.set(cacheKey, feedback);
+
+    // Evict oldest if cache exceeds max size (first item in Map is the oldest)
+    if (analysisCache.size > MAX_CACHE_SIZE) {
+      const oldestKey = analysisCache.keys().next().value;
+      analysisCache.delete(oldestKey);
+    }
 
     res.json({ feedback });
   } catch (error) {
