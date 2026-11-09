@@ -117,12 +117,7 @@ not, because no key was available.
 ## Gotchas — read before you touch anything
 
 1. **Licence.** The repo is licensed under MIT — see `LICENSE` (added 10 Nov 2026).
-2. **43 stale bot PRs.** GitHub shows 44 open PRs, all by khizzcr7, all titled
-   "⚡ Bolt: …" — an automation that opened duplicate after duplicate (26× "add
-   LRU cache", 14× "lazy-load / code-split react-markdown", 2× memoize, 1 generic).
-   Only PR #2 was ever merged.
-   Ignore them; they are not real work and are not your issues. Khizar needs to close
-   them before this project is presentable.
+2. **Stale bot PRs — closed.** The repo once had 44 open PRs, all by khizzcr7, all titled "⚡ Bolt: …" — an automation that opened duplicate after duplicate (26× "add LRU cache", 14× "lazy-load / code-split react-markdown", 2× memoize, 1 generic). Only PR #2 was ever merged. All 44 were closed on 10 Nov 2026 when the repo was opened to contributors. If new Bolt duplicates appear, ignore them — they are not real work.
 3. **Committed `node_modules` + `uploads/`.** `hiresense-server/node_modules/` is in git
    (the server `.gitignore` only ignores `.env`), which is why the repo is 9.7 MB.
    `uploads/` holds two identical copies of Khizar's own CV PDF. Both should be removed
