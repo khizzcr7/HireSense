@@ -5,6 +5,7 @@ const dotenv = require("dotenv");
 const fs = require("fs");
 const pdfParse = require("pdf-parse");
 const { GoogleGenAI } = require("@google/genai");
+const crypto = require("crypto");
 
 dotenv.config();
 
@@ -15,6 +16,8 @@ app.use(express.json());
 const ai = new GoogleGenAI({}); // Automatically picks GEMINI_API_KEY from .env
 const upload = multer({ storage: multer.memoryStorage() });
 
+const lruCache = new Map();
+
 app.post("/api/analyze", upload.single("resume"), async (req, res) => {
   try {
     const { jobTitle, jobDesc } = req.body;
@@ -24,6 +27,21 @@ app.post("/api/analyze", upload.single("resume"), async (req, res) => {
     }
 
     console.log("Uploaded resume:", req.file.originalname);
+
+    // ⚡ Bolt: Cache responses using LRU Map to avoid redundant AI calls for the same resume and job
+    const cacheKey = crypto
+      .createHash("sha256")
+      .update(req.file.buffer)
+      .update(`|${jobTitle}|${jobDesc || "N/A"}`)
+      .digest("hex");
+
+    if (lruCache.has(cacheKey)) {
+      const cachedFeedback = lruCache.get(cacheKey);
+      // Maintain LRU order
+      lruCache.delete(cacheKey);
+      lruCache.set(cacheKey, cachedFeedback);
+      return res.json({ feedback: cachedFeedback });
+    }
 
     // ⚡ Bolt: Use memory buffer instead of disk I/O to avoid latency from writing/reading files
     const parsed = await pdfParse(req.file.buffer);
@@ -56,6 +74,12 @@ Return results in Markdown format.
     });
 
     const feedback = response.text;
+
+    if (lruCache.size >= 100) {
+      const oldestKey = lruCache.keys().next().value;
+      lruCache.delete(oldestKey);
+    }
+    lruCache.set(cacheKey, feedback);
 
     res.json({ feedback });
   } catch (error) {
