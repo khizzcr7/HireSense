@@ -5,6 +5,7 @@ const dotenv = require("dotenv");
 const fs = require("fs");
 const pdfParse = require("pdf-parse");
 const { GoogleGenAI } = require("@google/genai");
+const crypto = require("crypto");
 
 dotenv.config();
 
@@ -15,12 +16,35 @@ app.use(express.json());
 const ai = new GoogleGenAI({}); // Automatically picks GEMINI_API_KEY from .env
 const upload = multer({ storage: multer.memoryStorage() });
 
+// ⚡ Bolt: LRU Cache to store recent AI responses and avoid redundant Gemini calls
+const cache = new Map();
+const MAX_CACHE_SIZE = 100;
+
 app.post("/api/analyze", upload.single("resume"), async (req, res) => {
   try {
     const { jobTitle, jobDesc } = req.body;
 
     if (!req.file || !req.file.buffer) {
       return res.status(400).json({ error: "Resume file missing or not uploaded." });
+    }
+
+    // ⚡ Bolt: Generate a hash of the inputs to use as a cache key
+    const hash = crypto.createHash("sha256");
+    hash.update(req.file.buffer);
+    hash.update(jobTitle || "");
+    hash.update(jobDesc || "");
+    const cacheKey = hash.digest("hex");
+
+    // ⚡ Bolt: Check cache before processing
+    if (cache.has(cacheKey)) {
+      console.log("⚡ Bolt: Cache hit! Returning cached feedback.");
+      const cachedFeedback = cache.get(cacheKey);
+
+      // Update LRU by deleting and re-inserting
+      cache.delete(cacheKey);
+      cache.set(cacheKey, cachedFeedback);
+
+      return res.json({ feedback: cachedFeedback });
     }
 
     console.log("Uploaded resume:", req.file.originalname);
@@ -56,6 +80,13 @@ Return results in Markdown format.
     });
 
     const feedback = response.text;
+
+    // ⚡ Bolt: Store the result in cache, maintaining max size
+    if (cache.size >= MAX_CACHE_SIZE) {
+      const firstKey = cache.keys().next().value;
+      cache.delete(firstKey);
+    }
+    cache.set(cacheKey, feedback);
 
     res.json({ feedback });
   } catch (error) {
