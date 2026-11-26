@@ -1,19 +1,20 @@
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
-const dotenv = require("dotenv");
 const fs = require("fs");
 const pdfParse = require("pdf-parse");
 const { GoogleGenAI } = require("@google/genai");
-
-dotenv.config();
+const config = require("./config");
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: config.allowedOrigins }));
 app.use(express.json());
 
 const ai = new GoogleGenAI({}); // Automatically picks GEMINI_API_KEY from .env
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: config.maxUploadMb * 1024 * 1024 },
+});
 
 app.post("/api/analyze", upload.single("resume"), async (req, res) => {
   try {
@@ -46,7 +47,7 @@ Return results in Markdown format.
 
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: config.geminiModel,
       contents: [
         {
           role: "user",
@@ -67,7 +68,7 @@ Return results in Markdown format.
 app.get("/api/test", async (req, res) => {
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: config.geminiModel,
       contents: [{ role: "user", parts: [{ text: "Say hi!" }] }],
     });
 
@@ -78,6 +79,6 @@ app.get("/api/test", async (req, res) => {
   }
 });
 
-app.listen(5000, () => {
-  console.log("✅ Server running on http://localhost:5000");
+app.listen(config.port, () => {
+  console.log(`✅ Server running on http://localhost:${config.port}`);
 });
