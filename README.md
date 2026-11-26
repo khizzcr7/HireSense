@@ -3,6 +3,7 @@
 > **Looking for contributors:** HireSense is open to new contributors. There are 15 open issues, several marked [`good first issue`](https://github.com/khizzcr7/HireSense/labels/good%20first%20issue), each with a written spec and acceptance criteria. Two of them carry the [`first-timers-only`](https://github.com/khizzcr7/HireSense/labels/first-timers-only) label for a first ever contribution. See [Contributing](#contributing) below.
 >
 > [![first-timers-only](https://img.shields.io/badge/first--timers--only-friendly-blue.svg?style=flat-square)](https://www.firsttimersonly.com/)
+> [![CodeTriage](https://www.codetriage.com/khizzcr7/hiresense/badges/users.svg)](https://www.codetriage.com/khizzcr7/hiresense)
 
 AI recruitment helper: upload a resume (PDF), enter a job title and an optional job description, and get AI-generated feedback on how well the resume matches the role.
 
