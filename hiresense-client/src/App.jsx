@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import axios from "axios";
 
@@ -12,12 +12,24 @@ export default function App() {
   const [resume, setResume] = useState(null);
   const [feedback, setFeedback] = useState("");
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState("");
+  const copyTimerRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!resume || !jobTitle)
       return alert("Please upload resume and enter job title");
     setLoading(true);
+    setCopied(false);
+    setCopyError("");
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
 
     const formData = new FormData();
     formData.append("resume", resume);
@@ -34,6 +46,23 @@ export default function App() {
       alert("Something went wrong.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCopyFeedback = async () => {
+    if (!feedback) return;
+    setCopyError("");
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard unavailable");
+      }
+      await navigator.clipboard.writeText(feedback);
+      setCopied(true);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+      setCopyError("Failed to copy feedback to clipboard. Please copy it manually.");
     }
   };
 
@@ -112,9 +141,25 @@ export default function App() {
 
         {feedback && (
           <div className="mt-5 p-4 feedback-card react-markdown">
-            <h5 className="text-success fw-bold mb-3">
-              💡 Smart Resume Feedback
-            </h5>
+            <div className="d-flex justify-content-between align-items-center gap-2 mb-3">
+              <h5 className="text-success fw-bold mb-0">
+                💡 Smart Resume Feedback
+              </h5>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-success"
+                onClick={handleCopyFeedback}
+                disabled={!feedback}
+              >
+                <i className={`bi ${copied ? "bi-check2" : "bi-clipboard"} me-1`} />
+                {copied ? "Copied!" : "Copy feedback"}
+              </button>
+            </div>
+            {copyError && (
+              <div className="alert alert-danger py-2 px-3 small mb-3" role="alert">
+                {copyError}
+              </div>
+            )}
             <ReactMarkdown>{feedback}</ReactMarkdown>
           </div>
         )}
