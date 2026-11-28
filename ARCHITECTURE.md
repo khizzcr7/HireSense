@@ -61,11 +61,12 @@ The repo has a root README and an MIT LICENSE file. The client README is the unt
    Axios to `http://localhost:5000/api/analyze` — the URL is **hardcoded** (App.jsx:29).
 3. **Server receives the upload** (`hiresense-server/index.js`, `POST /api/analyze`).
    Multer uses `memoryStorage()`, so the file lives only in `req.file.buffer` — this was
-   PR #2, the one merged improvement. There is **no file-size limit and no file-type
-   check** on the server.
+   PR #2, the one merged improvement. Uploads over `MAX_UPLOAD_MB` (default 5 MB)
+   and files that do not start with the `%PDF-` magic bytes are rejected with a
+   specific `400` before any parsing.
 4. **PDF text extraction**: `pdf-parse` reads `req.file.buffer` into plain text.
-   A non-PDF file reaches this step and throws ("Invalid PDF structure") — verified
-   live: the user gets a generic 500.
+   A file that has the PDF header but cannot be parsed also gets a `400`, not a
+   generic 500.
 5. **Prompt building**: the resume text, job title and job description are interpolated
    into a prompt asking Gemini for (a) a 3-bullet executive summary, (b) detailed
    bullet-point feedback, (c) suggestions — returned as Markdown.
@@ -125,9 +126,9 @@ not, because no key was available.
    tracked files.
 4. **Hardcoded API URL.** The client calls `http://localhost:5000` directly. There is
    no `VITE_API_URL` or equivalent. The app cannot talk to a deployed server.
-5. **No validation where it matters.** The server trusts the client completely: no file
-   size limit, no PDF check, no `jobTitle` check. A 500 MB upload or a `.exe` renamed
-   to `.pdf` both hit `pdf-parse` and die with a generic 500.
+5. **Partial validation.** The server checks the upload (size limit, PDF magic bytes,
+   field name) and answers `400` with a clear message, but there is still no
+   `jobTitle` / `jobDesc` check.
 6. **Dead dependencies and dead config.** `html2pdf.js` and `react-bootstrap` are
    installed but never imported. Tailwind is installed, has a config file, and is
    commented out of `index.css` — the config is also the cause of one of the two lint

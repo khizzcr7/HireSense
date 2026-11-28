@@ -16,7 +16,31 @@ const upload = multer({
   limits: { fileSize: config.maxUploadMb * 1024 * 1024 },
 });
 
-app.post("/api/analyze", upload.single("resume"), async (req, res) => {
+const PDF_MAGIC = Buffer.from("%PDF-");
+const NOT_A_PDF_MESSAGE =
+  "The uploaded file is not a readable PDF. Please upload your resume as a PDF.";
+
+const isPdf = (buffer) =>
+  buffer.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC);
+
+// Multer reports upload problems through its callback; without this wrapper
+// they reach Express's default handler and become a 500 with a stack trace.
+const uploadResume = (req, res, next) => {
+  upload.single("resume")(req, res, (err) => {
+    if (!err) return next();
+    if (!(err instanceof multer.MulterError)) return next(err);
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({
+        error: `Resume file is too large. The maximum size is ${config.maxUploadMb} MB.`,
+      });
+    }
+    return res.status(400).json({
+      error: 'Invalid upload. Send a single PDF in the "resume" field.',
+    });
+  });
+};
+
+app.post("/api/analyze", uploadResume, async (req, res) => {
   try {
     const { jobTitle, jobDesc } = req.body;
 
@@ -26,8 +50,19 @@ app.post("/api/analyze", upload.single("resume"), async (req, res) => {
 
     console.log("Uploaded resume:", req.file.originalname);
 
+    // The extension and mimetype are client-supplied, so only the content is trusted.
+    if (!isPdf(req.file.buffer)) {
+      return res.status(400).json({ error: NOT_A_PDF_MESSAGE });
+    }
+
     // ⚡ Bolt: Use memory buffer instead of disk I/O to avoid latency from writing/reading files
-    const parsed = await pdfParse(req.file.buffer);
+    let parsed;
+    try {
+      parsed = await pdfParse(req.file.buffer);
+    } catch (parseError) {
+      console.error("PDF parse error:", parseError.message);
+      return res.status(400).json({ error: NOT_A_PDF_MESSAGE });
+    }
     const resumeText = parsed.text;
 
     const prompt = `
@@ -79,6 +114,10 @@ app.get("/api/test", async (req, res) => {
   }
 });
 
-app.listen(config.port, () => {
-  console.log(`✅ Server running on http://localhost:${config.port}`);
-});
+if (require.main === module) {
+  app.listen(config.port, () => {
+    console.log(`✅ Server running on http://localhost:${config.port}`);
+  });
+}
+
+module.exports = app;
